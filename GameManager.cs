@@ -48,6 +48,9 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
+        if (ScoreManager.Instance != null)
+            ScoreManager.Instance.TargetReached += HandleTargetScoreReached;
+
         if (!StartDay(currentDay))
             enabled = false;
     }
@@ -56,6 +59,9 @@ public class GameManager : MonoBehaviour
     {
         if (beachSafetyManager != null)
             beachSafetyManager.RescueCompleted -= HandleRescueCompleted;
+
+        if (ScoreManager.Instance != null)
+            ScoreManager.Instance.TargetReached -= HandleTargetScoreReached;
 
         if (Instance == this)
             Instance = null;
@@ -208,6 +214,16 @@ public class GameManager : MonoBehaviour
     {
         SetState(GameState.GameClear);
         Debug.Log("Game Clear!", this);
+    }
+
+    private void HandleTargetScoreReached()
+    {
+        Debug.Log(
+            $"[GameManager] 목표 점수 " +
+            $"{ScoreManager.Instance.TargetScore}점 달성!",
+            this
+        );
+        CompleteGame();
     }
 
     private void HandleRescueCompleted(bool success)

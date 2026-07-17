@@ -6,10 +6,13 @@ public class ScoreManager : MonoBehaviour
     public static ScoreManager Instance { get; private set; }
 
     [SerializeField] private int startingScore;
+    [SerializeField, Min(1)] private int targetScore = 3000;
 
     public int Score { get; private set; }
+    public int TargetScore => targetScore;
 
     public event Action<int> ScoreChanged;
+    public event Action TargetReached;
 
     private void Awake()
     {
@@ -46,10 +49,19 @@ public class ScoreManager : MonoBehaviour
 
     public void SetScore(int score)
     {
-        if (Score == score)
+        int previousScore = Score;
+        int nextScore = Mathf.Max(0, score);
+
+        if (previousScore == nextScore)
             return;
 
-        Score = score;
+        Score = nextScore;
         ScoreChanged?.Invoke(Score);
+
+        if (previousScore < targetScore &&
+            Score >= targetScore)
+        {
+            TargetReached?.Invoke();
+        }
     }
 }
