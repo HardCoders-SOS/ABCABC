@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class GameWorldController : MonoBehaviour
 {
-    [SerializeField] private NPCSpawner npcSpawner;
+    [SerializeField] private NPCSpawner[] npcSpawners;
     [SerializeField] private TrashSpawner trashSpawner;
     [SerializeField] private RunningNPCSpawner runningNPCSpawner;
 
@@ -37,17 +37,18 @@ public class GameWorldController : MonoBehaviour
         switch (state)
         {
             case GameState.Playing:
+            case GameState.Rescue:
                 SetSpawningEnabled(true);
                 SetInteractionEnabled(true);
                 break;
 
-            case GameState.Rescue:
             case GameState.DayTransition:
                 SetSpawningEnabled(false);
                 SetInteractionEnabled(false);
                 break;
 
             case GameState.GameClear:
+            case GameState.GameOver:
                 SetSpawningEnabled(false);
                 SetInteractionEnabled(false);
                 break;
@@ -56,7 +57,12 @@ public class GameWorldController : MonoBehaviour
 
     private void SetSpawningEnabled(bool enabled)
     {
-        npcSpawner?.SetSpawningEnabled(enabled);
+        if (npcSpawners != null)
+        {
+            foreach (NPCSpawner npcSpawner in npcSpawners)
+                npcSpawner?.SetSpawningEnabled(enabled);
+        }
+
         trashSpawner?.SetSpawningEnabled(enabled);
         runningNPCSpawner?.SetSpawningEnabled(enabled);
     }

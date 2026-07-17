@@ -3,8 +3,10 @@ using UnityEngine;
 [System.Serializable]
 public class DayInfo
 {
-    public float dayTime;
+    public float dayTime = 150f;
+    public float nightTime = 150f;
     public float rescueTimeLimit = 10f;
+    public int rescueFailureLimit = 3;
 
     public float rescueMin;
     public float rescueMax;
@@ -23,8 +25,10 @@ public class DayInfo
     public override string ToString()
     {
         return
-            $"Time : {dayTime}\n" +
+            $"Day Time : {dayTime}\n" +
+            $"Night Time : {nightTime}\n" +
             $"Rescue Time : {rescueTimeLimit}\n" +
+            $"Failure Limit : {rescueFailureLimit}\n" +
             $"Rescue : {rescueMin} ~ {rescueMax}\n" +
             $"Trash : {trashMin} ~ {trashMax}\n" +
             $"Running : {runningMin} ~ {runningMax}\n" +

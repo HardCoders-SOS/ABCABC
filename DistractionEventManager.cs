@@ -86,6 +86,11 @@ public class DistractionEventManager : MonoBehaviour
             currentDayInfo != null &&
             currentDayInfo.distractionEnabled)
         {
+            Debug.Log(
+                $"[Distraction] Day {day} 이벤트 시작 | " +
+                $"첫 등장: {currentDayInfo.distractionFirstDelay}초",
+                this
+            );
             eventCoroutine = StartCoroutine(EventRoutine());
         }
     }
@@ -93,7 +98,8 @@ public class DistractionEventManager : MonoBehaviour
     private void HandleStateChanged(GameState state)
     {
         if (state == GameState.DayTransition ||
-            state == GameState.GameClear)
+            state == GameState.GameClear ||
+            state == GameState.GameOver)
         {
             distractionUI.Hide();
         }
@@ -106,7 +112,7 @@ public class DistractionEventManager : MonoBehaviour
         );
 
         while (currentEvent != null &&
-               gameManager.State != GameState.GameClear)
+               !IsGameFinished())
         {
             yield return WaitUntilEventCanAppear();
 
@@ -117,14 +123,19 @@ public class DistractionEventManager : MonoBehaviour
                 GetNextDialogue(currentEvent)
             );
 
+            Debug.Log(
+                $"[Distraction] Day {currentEvent.day} UI 표시",
+                this
+            );
+
             yield return new WaitUntil(
                 () => dialogueDismissed ||
                       currentEvent == null ||
-                      gameManager.State == GameState.GameClear
+                      IsGameFinished()
             );
 
             if (currentEvent == null ||
-                gameManager.State == GameState.GameClear)
+                IsGameFinished())
             {
                 break;
             }
@@ -146,7 +157,7 @@ public class DistractionEventManager : MonoBehaviour
             () => currentEvent == null ||
                   gameManager.State == GameState.Playing ||
                   gameManager.State == GameState.Rescue ||
-                  gameManager.State == GameState.GameClear
+                  IsGameFinished()
         );
     }
 
@@ -155,7 +166,7 @@ public class DistractionEventManager : MonoBehaviour
         float elapsed = 0f;
 
         while (currentEvent != null &&
-               gameManager.State != GameState.GameClear &&
+               !IsGameFinished() &&
                elapsed < duration)
         {
             if (gameManager.State == GameState.Playing ||
@@ -171,6 +182,12 @@ public class DistractionEventManager : MonoBehaviour
     private void HandleDismissed()
     {
         dialogueDismissed = true;
+    }
+
+    private bool IsGameFinished()
+    {
+        return gameManager.State == GameState.GameClear ||
+               gameManager.State == GameState.GameOver;
     }
 
     private void StopCurrentEvent()

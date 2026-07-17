@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -6,15 +7,19 @@ using UnityEngine;
 /// </summary>
 public class BeachEventManager : MonoBehaviour
 {
-    [SerializeField] private NPCSpawner npcSpawner;
+    [SerializeField] private NPCSpawner[] npcSpawners;
     [SerializeField] private TrashSpawner trashSpawner;
 
-    public NPCSpawner NPCSpawner => npcSpawner;
+    public IReadOnlyList<NPCSpawner> NPCSpawners => npcSpawners;
     public TrashSpawner TrashSpawner => trashSpawner;
 
     public void SetRescueSpawnTime(float min, float max)
     {
-        npcSpawner?.SetSpawnInterval(min, max);
+        if (npcSpawners == null)
+            return;
+
+        foreach (NPCSpawner npcSpawner in npcSpawners)
+            npcSpawner?.SetSpawnInterval(min, max);
     }
 
     public void SetTrashSpawnTime(float min, float max)
@@ -24,7 +29,12 @@ public class BeachEventManager : MonoBehaviour
 
     public void SetSpawningEnabled(bool enabled)
     {
-        npcSpawner?.SetSpawningEnabled(enabled);
+        if (npcSpawners != null)
+        {
+            foreach (NPCSpawner npcSpawner in npcSpawners)
+                npcSpawner?.SetSpawningEnabled(enabled);
+        }
+
         trashSpawner?.SetSpawningEnabled(enabled);
     }
 }

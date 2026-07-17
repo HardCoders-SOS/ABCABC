@@ -86,9 +86,9 @@ public static class DayInfoLoader
 
         Normalize(info);
 
-        if (info.dayTime <= 0f)
+        if (info.dayTime <= 0f || info.nightTime <= 0f)
         {
-            error = "Time must be greater than zero.";
+            error = "Day Time and Night Time must be greater than zero.";
             return false;
         }
 
@@ -129,15 +129,28 @@ public static class DayInfoLoader
         string key,
         float value)
     {
-        if (key == "Time")
+        if (key == "Time" || key == "Day Time")
         {
             info.dayTime = value;
+            return;
+        }
+
+        if (key == "Night Time")
+        {
+            info.nightTime = value;
             return;
         }
 
         if (key == "Rescue Time")
         {
             info.rescueTimeLimit = value;
+            return;
+        }
+
+        if (key == "Failure Limit")
+        {
+            info.rescueFailureLimit =
+                Mathf.Max(1, Mathf.RoundToInt(value));
             return;
         }
 
@@ -208,6 +221,8 @@ public static class DayInfoLoader
     {
         info.rescueTimeLimit =
             Mathf.Max(1f, info.rescueTimeLimit);
+        info.rescueFailureLimit =
+            Mathf.Max(1, info.rescueFailureLimit);
 
         NormalizeRange(ref info.rescueMin, ref info.rescueMax);
         NormalizeRange(ref info.trashMin, ref info.trashMax);

@@ -51,8 +51,8 @@ public class EndingUI : MonoBehaviour
 
         gameManager.StateChanged += HandleStateChanged;
 
-        if (gameManager.State == GameState.GameClear)
-            Show();
+        if (IsEndingState(gameManager.State))
+            Show(gameManager.State);
     }
 
     private void OnDestroy()
@@ -69,13 +69,13 @@ public class EndingUI : MonoBehaviour
 
     private void HandleStateChanged(GameState state)
     {
-        if (state == GameState.GameClear)
-            Show();
+        if (IsEndingState(state))
+            Show(state);
     }
 
-    public void Show()
+    public void Show(GameState resultState)
     {
-        UpdateResult();
+        UpdateResult(resultState);
         root?.SetActive(true);
 
         if (fadeCoroutine != null)
@@ -99,7 +99,7 @@ public class EndingUI : MonoBehaviour
 #endif
     }
 
-    private void UpdateResult()
+    private void UpdateResult(GameState resultState)
     {
         int score =
             scoreManager != null ? scoreManager.Score : 0;
@@ -120,7 +120,12 @@ public class EndingUI : MonoBehaviour
                 : 0f;
 
         if (titleText != null)
-            titleText.text = "해변 안전 임무 완료!";
+        {
+            titleText.text =
+                resultState == GameState.GameClear
+                    ? "해변 안전 임무 완료!"
+                    : "GAME OVER";
+        }
 
         if (finalScoreText != null)
             finalScoreText.text = $"최종 점수 : {score}";
@@ -134,13 +139,23 @@ public class EndingUI : MonoBehaviour
         }
 
         if (messageText != null)
-            messageText.text = GetEndingMessage(score, successRate);
+        {
+            messageText.text = GetEndingMessage(
+                resultState,
+                score,
+                successRate
+            );
+        }
     }
 
     private static string GetEndingMessage(
+        GameState resultState,
         int score,
         float successRate)
     {
+        if (resultState == GameState.GameOver)
+            return "구조 실패 허용 횟수를 초과했습니다.";
+
         if (successRate >= 80f)
             return "최고의 안전요원입니다!";
 
@@ -151,6 +166,12 @@ public class EndingUI : MonoBehaviour
             return "조금 더 주의 깊은 구조가 필요합니다.";
 
         return "다시 도전해서 해변을 안전하게 만들어보세요!";
+    }
+
+    private static bool IsEndingState(GameState state)
+    {
+        return state == GameState.GameClear ||
+               state == GameState.GameOver;
     }
 
     private IEnumerator FadeInRoutine()

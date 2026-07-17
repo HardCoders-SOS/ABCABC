@@ -17,6 +17,6 @@ public class WarningSpaceRelay : MonoBehaviour
         if (npc == null)
             return;
 
-        npc.StartRescueEvent();
+        npc.EnterWater();
     }
 }

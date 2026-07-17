@@ -18,15 +18,19 @@ public class GameManager : MonoBehaviour
     private float currentTime;
     private bool isTimerRunning;
     private bool dayAdvancePending;
+    private int rescueFailuresThisDay;
 
     public int CurrentDay => currentDay;
     public float CurrentTime => currentTime;
+    public DayPhase CurrentPhase { get; private set; } = DayPhase.Day;
     public DayInfo CurrentDayInfo { get; private set; }
+    public int RescueFailuresThisDay => rescueFailuresThisDay;
     public GameState State { get; private set; } =
         GameState.DayTransition;
 
     public event Action<GameState> StateChanged;
     public event Action<int, DayInfo> DayChanged;
+    public event Action<DayPhase> PhaseChanged;
 
     private void Awake()
     {
@@ -37,6 +41,9 @@ public class GameManager : MonoBehaviour
         }
 
         Instance = this;
+
+        if (beachSafetyManager != null)
+            beachSafetyManager.RescueCompleted += HandleRescueCompleted;
     }
 
     private void Start()
@@ -47,6 +54,9 @@ public class GameManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (beachSafetyManager != null)
+            beachSafetyManager.RescueCompleted -= HandleRescueCompleted;
+
         if (Instance == this)
             Instance = null;
     }
@@ -56,7 +66,12 @@ public class GameManager : MonoBehaviour
         if (!isTimerRunning)
             return;
 
-        currentTime = Mathf.Max(0f, currentTime - Time.deltaTime);
+        // Rescue UI or another overlay may change Time.timeScale.
+        // The day/night clock must continue during every rescue event.
+        currentTime = Mathf.Max(
+            0f,
+            currentTime - Time.unscaledDeltaTime
+        );
         gameHUD?.SetTime(currentTime);
 
         if (currentTime <= 0f)
@@ -68,7 +83,7 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                AdvanceDay();
+                AdvancePhase();
             }
         }
     }
@@ -89,11 +104,17 @@ public class GameManager : MonoBehaviour
 
     public void SetState(GameState nextState)
     {
+        if (State == GameState.GameClear ||
+            State == GameState.GameOver)
+        {
+            return;
+        }
+
         if (nextState == GameState.Playing &&
             dayAdvancePending)
         {
             dayAdvancePending = false;
-            AdvanceDay();
+            AdvancePhase();
             return;
         }
 
@@ -130,16 +151,42 @@ public class GameManager : MonoBehaviour
             return false;
 
         currentDay = day;
+        CurrentPhase = DayPhase.Day;
         currentTime = CurrentDayInfo.dayTime;
         dayAdvancePending = false;
+        rescueFailuresThisDay = 0;
 
         ApplyDayInfo(CurrentDayInfo);
         gameHUD?.SetDay(currentDay);
+        gameHUD?.SetPhase(CurrentPhase);
         gameHUD?.SetTime(currentTime);
+        gameHUD?.SetRescueFailures(
+            rescueFailuresThisDay,
+            CurrentDayInfo.rescueFailureLimit
+        );
         DayChanged?.Invoke(currentDay, CurrentDayInfo);
+        PhaseChanged?.Invoke(CurrentPhase);
 
         SetState(GameState.Playing);
         return true;
+    }
+
+    private void AdvancePhase()
+    {
+        isTimerRunning = false;
+
+        if (CurrentPhase == DayPhase.Day)
+        {
+            CurrentPhase = DayPhase.Night;
+            currentTime = CurrentDayInfo.nightTime;
+            gameHUD?.SetPhase(CurrentPhase);
+            gameHUD?.SetTime(currentTime);
+            PhaseChanged?.Invoke(CurrentPhase);
+            isTimerRunning = true;
+            return;
+        }
+
+        AdvanceDay();
     }
 
     private void AdvanceDay()
@@ -161,6 +208,42 @@ public class GameManager : MonoBehaviour
     {
         SetState(GameState.GameClear);
         Debug.Log("Game Clear!", this);
+    }
+
+    private void HandleRescueCompleted(bool success)
+    {
+        if (success ||
+            CurrentDayInfo == null ||
+            State == GameState.GameClear ||
+            State == GameState.GameOver)
+        {
+            return;
+        }
+
+        rescueFailuresThisDay++;
+        gameHUD?.SetRescueFailures(
+            rescueFailuresThisDay,
+            CurrentDayInfo.rescueFailureLimit
+        );
+
+        Debug.Log(
+            $"[GameManager] Day {currentDay} 구조 실패 누적: " +
+            $"{rescueFailuresThisDay}/" +
+            $"{CurrentDayInfo.rescueFailureLimit}",
+            this
+        );
+
+        if (rescueFailuresThisDay >=
+            CurrentDayInfo.rescueFailureLimit)
+        {
+            SetState(GameState.GameOver);
+            Debug.Log(
+                $"Game Over! Rescue failures: " +
+                $"{rescueFailuresThisDay}/" +
+                $"{CurrentDayInfo.rescueFailureLimit}",
+                this
+            );
+        }
     }
 
     private void ApplyDayInfo(DayInfo info)

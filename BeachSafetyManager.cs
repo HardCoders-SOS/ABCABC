@@ -36,6 +36,7 @@ public class BeachSafetyManager : MonoBehaviour
     public int RescuedNPCCount => rescuedNPCCount;
     public int FailedNPCCount => failedNPCCount;
     public bool IsRescueActive => rescueEventActive;
+    public event Action<bool> RescueCompleted;
 
     public float RescueSuccessRate
     {
@@ -100,6 +101,19 @@ public class BeachSafetyManager : MonoBehaviour
         return true;
     }
 
+    public void RegisterMissedRescue(GameObject targetNPC)
+    {
+        if (targetNPC == null)
+            return;
+
+        RecordRescueResult(
+            false,
+            "NPC 위 느낌표를 제한시간 안에 누르지 못함"
+        );
+
+        Destroy(targetNPC);
+    }
+
     public void ResetStatistics()
     {
         rescuedNPCCount = 0;
@@ -126,6 +140,19 @@ public class BeachSafetyManager : MonoBehaviour
         resultProcessed = true;
         currentRescueSucceeded = success;
 
+        RecordRescueResult(
+            success,
+            success
+                ? "올바른 구조 도구 선택"
+                : "오답 선택 또는 구조 제한시간 초과"
+        );
+        EndRescueEvent();
+    }
+
+    private void RecordRescueResult(
+        bool success,
+        string reason)
+    {
         if (success)
         {
             rescuedNPCCount++;
@@ -138,7 +165,13 @@ public class BeachSafetyManager : MonoBehaviour
         }
 
         UpdateCountText();
-        EndRescueEvent();
+        RescueCompleted?.Invoke(success);
+
+        Debug.Log(
+            $"[Rescue] {(success ? "성공" : "실패")} - {reason} | " +
+            $"성공: {rescuedNPCCount}, 실패: {failedNPCCount}",
+            this
+        );
     }
 
     private void EndRescueEvent()
@@ -189,7 +222,7 @@ public class BeachSafetyManager : MonoBehaviour
                rescueEventActive &&
                !resultProcessed)
         {
-            remainingTime -= Time.deltaTime;
+            remainingTime -= Time.unscaledDeltaTime;
             rescueUI?.SetTime(remainingTime);
             yield return null;
         }

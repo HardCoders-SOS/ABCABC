@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(SpriteRenderer))]
@@ -11,6 +12,7 @@ public class NPCWarningController : MonoBehaviour
         Moving,
         WarningAvailable,
         Warned,
+        AwaitingRescueClick,
         Rescue,
         Resolved
     }
@@ -36,6 +38,7 @@ public class NPCWarningController : MonoBehaviour
     [Header("Movement")]
     [SerializeField, Min(0f)] private float moveSpeed = 2f;
     [SerializeField] private Vector2 fallbackMoveDirection = Vector2.up;
+    [SerializeField, Min(1f)] private float verticalDirectionWeight = 1.6f;
 
     [Header("Perspective")]
     [SerializeField, Range(0.1f, 1f)]
@@ -45,8 +48,9 @@ public class NPCWarningController : MonoBehaviour
     private float turnDistanceFromWater = 2f;
 
     [Header("Warning Detection")]
-    [SerializeField, Min(0f)] private float rayDistance = 2f;
+    [SerializeField, Min(0f)] private float rayDistance = 5f;
     [SerializeField] private LayerMask warningLineLayer;
+    [SerializeField, Min(1f)] private float rescueClickGraceTime = 10f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugRay = true;
@@ -56,21 +60,29 @@ public class NPCWarningController : MonoBehaviour
     private GameObject warningEmoji;
     private NPCSpriteSet selectedSpriteSet;
     private BeachSafetyManager rescueManager;
+    private MapNavigationController mapNavigation;
+    private MapArea mapArea;
     private Transform waterTarget;
     private Vector3 initialScale;
     private float initialDistanceToWater;
     private bool isFacingAway;
+    private bool crossedWarningLine;
+    private bool incidentRaised;
+    private Coroutine rescueClickTimerCoroutine;
     private NPCState currentState = NPCState.Moving;
 
-    public bool IsWarned => currentState == NPCState.Warned;
     public bool IsRescueActive => currentState == NPCState.Rescue;
 
     public void Initialize(
         BeachSafetyManager manager,
-        Transform target)
+        Transform target,
+        MapNavigationController navigation,
+        MapArea area)
     {
         rescueManager = manager;
         waterTarget = target;
+        mapNavigation = navigation;
+        mapArea = area;
         InitializePerspective();
     }
 
@@ -95,18 +107,34 @@ public class NPCWarningController : MonoBehaviour
 
     public void TryWarning()
     {
-        if (currentState != NPCState.WarningAvailable)
+        if (currentState == NPCState.WarningAvailable)
+        {
+            ChangeState(NPCState.Warned);
+            ScoreManager.Instance?.AddScore(10);
+            Destroy(gameObject, 0.3f);
             return;
+        }
 
-        ChangeState(NPCState.Warned);
-        ScoreManager.Instance?.AddScore(10);
-        Destroy(gameObject, 0.3f);
+        if (currentState == NPCState.AwaitingRescueClick)
+            StartRescueEvent();
     }
 
-    public void StartRescueEvent()
+    public void EnterWater()
     {
-        if (currentState == NPCState.Warned ||
-            currentState == NPCState.Rescue ||
+        if (currentState != NPCState.Moving &&
+            currentState != NPCState.WarningAvailable)
+        {
+            return;
+        }
+
+        ChangeState(NPCState.AwaitingRescueClick);
+        RaiseIncident();
+        StartRescueClickTimer();
+    }
+
+    private void StartRescueEvent()
+    {
+        if (currentState != NPCState.AwaitingRescueClick ||
             currentState == NPCState.Resolved)
         {
             return;
@@ -122,7 +150,10 @@ public class NPCWarningController : MonoBehaviour
         }
 
         if (rescueManager.StartRescue(gameObject))
+        {
+            StopRescueClickTimer();
             ChangeState(NPCState.Rescue);
+        }
     }
 
     public void ResolveRescue(bool success)
@@ -131,6 +162,7 @@ public class NPCWarningController : MonoBehaviour
             return;
 
         ChangeState(NPCState.Resolved);
+        ResolveIncident();
         Debug.Log(success ? $"[{name}] Rescue success" : $"[{name}] Rescue failed", this);
         Destroy(gameObject);
     }
@@ -146,10 +178,14 @@ public class NPCWarningController : MonoBehaviour
     private void MoveNPC()
     {
         if (currentState != NPCState.Moving &&
-            currentState != NPCState.WarningAvailable)
+            currentState != NPCState.WarningAvailable &&
+            currentState != NPCState.AwaitingRescueClick)
         {
             return;
         }
+
+        if (currentState == NPCState.AwaitingRescueClick)
+            return;
 
         transform.position +=
             (Vector3)(GetMoveDirection() * moveSpeed * Time.deltaTime);
@@ -194,6 +230,7 @@ public class NPCWarningController : MonoBehaviour
         );
 
         bool shouldFaceAway =
+            crossedWarningLine ||
             distanceToWater <= turnDistanceFromWater;
 
         if (shouldFaceAway != isFacingAway)
@@ -205,21 +242,102 @@ public class NPCWarningController : MonoBehaviour
 
     private void DetectWarningLine()
     {
-        if (currentState != NPCState.Moving)
+        if (crossedWarningLine ||
+            currentState != NPCState.Moving)
+        {
             return;
+        }
 
         RaycastHit2D hit = Physics2D.Raycast(
             transform.position,
-            GetMoveDirection(),
+            Vector2.up,
             rayDistance,
             warningLineLayer
         );
 
-        if (hit.collider != null &&
-            hit.collider.CompareTag("WarningLine"))
+        if (showDebugRay)
         {
-            ChangeState(NPCState.WarningAvailable);
+            Debug.DrawRay(
+                transform.position,
+                Vector2.up * rayDistance,
+                hit.collider != null ? Color.green : Color.yellow
+            );
         }
+
+        if (hit.collider == null ||
+            !hit.collider.CompareTag("WarningLine"))
+        {
+            return;
+        }
+
+        crossedWarningLine = true;
+        isFacingAway = true;
+        ChangeState(NPCState.WarningAvailable);
+    }
+
+    private void StartRescueClickTimer()
+    {
+        StopRescueClickTimer();
+        rescueClickTimerCoroutine =
+            StartCoroutine(RescueClickTimerRoutine());
+    }
+
+    private void StopRescueClickTimer()
+    {
+        if (rescueClickTimerCoroutine == null)
+            return;
+
+        StopCoroutine(rescueClickTimerCoroutine);
+        rescueClickTimerCoroutine = null;
+    }
+
+    private IEnumerator RescueClickTimerRoutine()
+    {
+        float remainingTime = rescueClickGraceTime;
+
+        while (remainingTime > 0f &&
+               currentState == NPCState.AwaitingRescueClick)
+        {
+            remainingTime -= Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        rescueClickTimerCoroutine = null;
+
+        if (currentState != NPCState.AwaitingRescueClick)
+            yield break;
+
+        ChangeState(NPCState.Resolved);
+        ResolveIncident();
+
+        if (rescueManager != null)
+            rescueManager.RegisterMissedRescue(gameObject);
+        else
+            Destroy(gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        StopRescueClickTimer();
+        ResolveIncident();
+    }
+
+    private void RaiseIncident()
+    {
+        if (incidentRaised)
+            return;
+
+        incidentRaised = true;
+        mapNavigation?.RaiseIncident(mapArea);
+    }
+
+    private void ResolveIncident()
+    {
+        if (!incidentRaised)
+            return;
+
+        incidentRaised = false;
+        mapNavigation?.ResolveIncident(mapArea);
     }
 
     private void FindWarningEmoji()
@@ -266,7 +384,8 @@ public class NPCWarningController : MonoBehaviour
         if (warningEmoji != null)
         {
             warningEmoji.SetActive(
-                currentState == NPCState.WarningAvailable
+                currentState == NPCState.WarningAvailable ||
+                currentState == NPCState.AwaitingRescueClick
             );
         }
     }
@@ -285,11 +404,10 @@ public class NPCWarningController : MonoBehaviour
 
             case NPCState.WarningAvailable:
                 spriteRenderer.sprite =
-                    isFacingAway
-                        ? GetWalkingSprite()
-                        : selectedSpriteSet.warningSprite;
+                    selectedSpriteSet.warningSprite;
                 break;
 
+            case NPCState.AwaitingRescueClick:
             case NPCState.Rescue:
                 spriteRenderer.sprite = selectedSpriteSet.rescueSprite;
                 break;
@@ -304,7 +422,10 @@ public class NPCWarningController : MonoBehaviour
                 waterTarget.position - transform.position;
 
             if (direction.sqrMagnitude > Mathf.Epsilon)
+            {
+                direction.y *= verticalDirectionWeight;
                 return direction.normalized;
+            }
         }
 
         return fallbackMoveDirection.sqrMagnitude > 0f
@@ -328,11 +449,8 @@ public class NPCWarningController : MonoBehaviour
         if (!showDebugRay)
             return;
 
-        Vector2 direction =
-            GetMoveDirection();
-
         Vector3 start = transform.position;
-        Vector3 end = start + (Vector3)(direction * rayDistance);
+        Vector3 end = start + Vector3.up * rayDistance;
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawLine(start, end);
